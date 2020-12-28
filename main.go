@@ -34,6 +34,7 @@ func main() {
 	}
 
 	natsSubject := os.Args[4]
+	natsMode := os.Args[5]
 
 	log.Println("start")
 	nc, err := nats.Connect(natsServers,
@@ -54,13 +55,36 @@ func main() {
 
 	log.Println("connected", nc.ConnectedAddr())
 
-	nc.Subscribe(natsSubject, func(m *nats.Msg) {
-		log.Println("message", string(m.Data))
-		fmt.Println(string(m.Data))
-		done <- true
-	})
+	switch natsMode {
+	case "publish":
+		message := os.Args[6]
 
-	log.Println("subscribed", natsSubject)
+		log.Println("publishing to", natsSubject, "message", message)
+		m := &nats.Msg{
+			Subject: natsSubject,
+			Data:    []byte(message),
+		}
+
+		if err := nc.PublishMsg(m); err != nil {
+			log.Println("publish error", err)
+			done <- false
+		} else if err := nc.Flush(); err != nil {
+			log.Println("flush error", err)
+			done <- false
+		} else {
+			done <- true
+		}
+	case "subscribe":
+		nc.Subscribe(natsSubject, func(m *nats.Msg) {
+			log.Println("message", string(m.Data))
+			fmt.Println(string(m.Data))
+			done <- true
+		})
+
+		log.Println("subscribed", natsSubject)
+	default:
+		log.Fatalln("unknown natsMode", natsMode)
+	}
 
 	success := <-done
 	if success {
