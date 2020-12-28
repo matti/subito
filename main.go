@@ -1,0 +1,73 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
+
+	"github.com/nats-io/nats.go"
+)
+
+func main() {
+	done := make(chan bool, 1)
+	sigs := make(chan os.Signal, 1)
+
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		log.Println("got signal", <-sigs)
+		done <- false
+	}()
+
+	natsServers := os.Args[1]
+	natsPingInterval, err := time.ParseDuration(os.Args[2])
+	if err != nil {
+		log.Fatalln("natsPingInterval", err)
+	}
+
+	natsMaxPingsOutstanding, err := strconv.Atoi(os.Args[3])
+	if err != nil {
+		log.Fatalln("natsMaxPingsOutstanding", err)
+	}
+
+	natsSubject := os.Args[4]
+
+	log.Println("start")
+	nc, err := nats.Connect(natsServers,
+		nats.Timeout(1*time.Second),
+		nats.NoReconnect(),
+		nats.MaxPingsOutstanding(natsMaxPingsOutstanding),
+		nats.PingInterval(natsPingInterval),
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			log.Println("disconnected")
+			done <- false
+		}),
+	)
+
+	if nc.ConnectedAddr() == "" {
+		log.Println("connect failed to ", natsServers)
+		os.Exit(1)
+	}
+
+	log.Println("connected", nc.ConnectedAddr())
+
+	nc.Subscribe(natsSubject, func(m *nats.Msg) {
+		log.Println("message", string(m.Data))
+		fmt.Println(string(m.Data))
+		done <- true
+	})
+
+	log.Println("subscribed", natsSubject)
+
+	success := <-done
+	if success {
+		log.Println("done success")
+		os.Exit(0)
+	} else {
+		log.Println("done failure")
+		os.Exit(1)
+	}
+}
