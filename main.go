@@ -48,6 +48,10 @@ func main() {
 		}),
 	)
 
+	if err != nil {
+		log.Fatalln("nats.Connect", err)
+	}
+
 	if nc.ConnectedAddr() == "" {
 		log.Println("connect failed to ", natsServers)
 		os.Exit(1)
@@ -75,13 +79,19 @@ func main() {
 			done <- true
 		}
 	case "subscribe":
+		subscribePrinted := make(chan bool, 1)
 		nc.Subscribe(natsSubject, func(m *nats.Msg) {
+			<-subscribePrinted
 			log.Println("message", string(m.Data))
+			fmt.Println("MESSAGE")
 			fmt.Println(string(m.Data))
 			done <- true
 		})
 
 		log.Println("subscribed", natsSubject)
+		fmt.Println("SUBSCRIBED")
+		subscribePrinted <- true
+
 	default:
 		log.Fatalln("unknown natsMode", natsMode)
 	}
